@@ -1,7 +1,6 @@
 """
 Web Scraping Agent — Autonomous agent that crawls websites and extracts structured data.
 
-Inspired by: crawl4ai patterns
 Uses: LangChain + BeautifulSoup for intelligent scraping
 
 Usage:
@@ -176,7 +175,7 @@ class WebScrapingAgent:
             try:
                 result = self.scrape(url, extract=["text", "links", "metadata"])
                 results.append(result)
-                print(f"  ✅ [{len(results)}/{max_pages}] {url} ({result.get('text_size', 0)} chars)")
+                print(f"  [SUCCESS] [{len(results)}/{max_pages}] {url} ({result.get('text_size', 0)} chars)")
 
                 # Add new links to queue
                 for link in result.get("links", []):
@@ -188,7 +187,7 @@ class WebScrapingAgent:
                         except Exception:
                             pass
             except Exception as e:
-                print(f"  ❌ {url}: {e}")
+                print(f"  [ERROR] {url}: {e}")
 
         return results
 
@@ -201,10 +200,10 @@ if __name__ == "__main__":
 
     # Single page scrape
     result = agent.scrape("https://example.com")
-    print(f"\n📄 Title: {result['metadata'].get('title', 'N/A')}")
-    print(f"📝 Text: {result['text'][:200]}...")
-    print(f"🔗 Links: {result['link_count']}")
-    print(f"📑 Headings: {len(result['headings'])}")
-    print(f"📊 Tables: {result['table_count']}")
+    print(f"\nPage Title: {result['metadata'].get('title', 'N/A')}")
+    print(f"Text Content: {result['text'][:200]}...")
+    print(f"Link Count: {result['link_count']}")
+    print(f"Headings Found: {len(result['headings'])}")
+    print(f"Tables Extracted: {result['table_count']}")
 
-    print("\n✅ Web Scraping Agent ready!")
+    print("\nScraping Agent ready.")

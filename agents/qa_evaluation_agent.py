@@ -1,7 +1,6 @@
 """
 QA Evaluation Agent — Evaluate LLM outputs for quality, accuracy, and safety.
 
-Inspired by: giskard testing patterns
 Uses: OpenAI for grading, systematic evaluation rubrics
 
 Usage:
@@ -160,9 +159,9 @@ class QAEvaluator:
         recs = []
         for criterion, result in scores.items():
             if result["score"] <= 2:
-                recs.append(f"🔴 {criterion.upper()}: {result['reason']} — needs significant improvement")
+                recs.append(f"[CRITICAL] {criterion.upper()}: {result['reason']} — needs significant improvement")
             elif result["score"] == 3:
-                recs.append(f"🟡 {criterion.upper()}: {result['reason']} — room for improvement")
+                recs.append(f"[WARNING] {criterion.upper()}: {result['reason']} — room for improvement")
         return recs
 
     def batch_evaluate(self, test_cases: list[dict]) -> dict:

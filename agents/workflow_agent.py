@@ -1,7 +1,6 @@
 """
 Workflow Orchestration Agent — Chain multiple agents together in configurable workflows.
 
-Inspired by: n8n-workflows patterns (trigger → process → output)
 Uses: LangGraph-style state management
 
 Usage:
@@ -142,10 +141,10 @@ class WorkflowAgent:
 
         # Resolve execution order
         order = self._resolve_execution_order()
-
-        print(f"\n🚀 Workflow: {self.name}")
-        print(f"   Steps: {' → '.join(order)}")
-        print(f"{'─' * 50}")
+        
+        print(f"\nWorkflow: {self.name}")
+        print(f"   Steps: {' -> '.join(order)}")
+        print(f"{'-' * 50}")
 
         start_time = time.time()
         failed_steps = []
@@ -156,7 +155,7 @@ class WorkflowAgent:
 
             try:
                 result = self._execute_step(step)
-                print(f"✅ ({step.duration:.1f}s)")
+                print(f"SUCCESS ({step.duration:.1f}s)")
 
                 # Store result in shared state
                 self.state[step_name] = result
@@ -188,24 +187,24 @@ class WorkflowAgent:
             "execution_log": self.execution_log,
         }
 
-        print(f"\n{'─' * 50}")
-        status = "✅ Complete" if not failed_steps else f"⚠️ {len(failed_steps)} failed"
-        print(f"  {status} — {report['completed']}/{report['total_steps']} steps in {total_time:.1f}s")
+        print(f"\n{'-' * 50}")
+        status = "Complete" if not failed_steps else f"{len(failed_steps)} failed"
+        print(f"  {status} -- {report['completed']}/{report['total_steps']} steps in {total_time:.1f}s")
 
         return report
 
     def visualize(self) -> str:
         """Generate a text-based workflow diagram."""
         order = self._resolve_execution_order()
-        lines = [f"📋 {self.name}", ""]
+        lines = [f"Workflow: {self.name}", ""]
 
         for i, name in enumerate(order):
             step = self.steps[name]
-            deps = f" (← {', '.join(step.depends_on)})" if step.depends_on else ""
-            status_icon = {"pending": "⬜", "running": "🔄", "completed": "✅", "failed": "❌"}.get(step.status, "⬜")
+            deps = f" (<- {', '.join(step.depends_on)})" if step.depends_on else ""
+            status_icon = {"pending": "[ ]", "running": "[/]", "completed": "[x]", "failed": "[!]"}.get(step.status, "[ ]")
             lines.append(f"  {status_icon} Step {i+1}: {name}{deps}")
             if i < len(order) - 1:
-                lines.append("       ↓")
+                lines.append("       |")
 
         return "\n".join(lines)
 
