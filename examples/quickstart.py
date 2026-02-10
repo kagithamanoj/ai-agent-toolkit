@@ -6,9 +6,13 @@ Usage:
 """
 
 import os
+import sys
+from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
+# Add project root to path so we can import agents/utils
+sys.path.insert(0, str(Path(__file__).parent.parent))
+load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")
 
 
 def demo_rag():
