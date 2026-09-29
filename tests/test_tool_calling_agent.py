@@ -103,3 +103,19 @@ def test_loop_stops_at_max_iterations(monkeypatch):
     out = tca.run_agent_loop("x", max_iterations=3)
     assert out.startswith("Max iterations reached")
     assert llm.replies == []  # exactly max_iterations model calls were made
+
+
+def test_calculator_rejects_sandbox_escapes():
+    for expr in [
+        "().__class__.__bases__[0].__subclasses__()",
+        "__import__('os').system('true')",
+        "[x for x in range(3)]",
+        "'a' * 3",
+        "9 ** 9 ** 9",
+    ]:
+        assert tca.calculator.invoke({"expression": expr}).startswith("Error evaluating"), expr
+
+
+def test_calculator_supports_constants_and_unary():
+    assert tca.calculator.invoke({"expression": "-pi"}) == f"Result: {-3.141592653589793}"
+    assert tca.calculator.invoke({"expression": "2 ** 10"}) == "Result: 1024"

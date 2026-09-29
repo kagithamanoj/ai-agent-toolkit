@@ -20,30 +20,28 @@ bibliography: paper.bib
 
 # Summary
 
-ai-agent-toolkit is a small open-source Python toolkit for building systems from large language model agents. It implements five agent patterns that show up again and again in production work: a tool-calling loop, a pipeline DAG, a supervisor/worker team, a RAG-grounded agent, and a stateful memory agent. Each pattern is one module, built on LangChain and LangGraph. The toolkit also ships the plumbing that production systems need from day one: per-run tracing with token counts, step and token budgets, guardrail hooks at the tool boundary, and tenant-keyed memory.
+ai-agent-toolkit is a small open-source Python toolkit of working implementations of common LLM agent patterns. It contains seven modules, each one file, each runnable on its own: a tool-calling loop, a retrieval-augmented generation chain, a Researcher/Writer/Reviewer multi-agent pipeline, a conversational memory agent, an LLM-as-judge QA evaluator, a web scraping helper, and a dependency-ordered workflow runner. Everything is built on LangChain, with LangGraph for the multi-agent pipeline, and every module ships with a command-line entry point.
 
 # Statement of need
 
-Agent tooling clusters at two extremes. Demos wire a model to a few tools and stop. Platforms bring orchestration, policy, and observability with a heavy adoption cost. Teams shipping real systems need something between: working implementations of the standard patterns, small enough to read in an afternoon and adapt without a rewrite.
+Agent code tends to live at two extremes. Demos wire a model to a couple of tools and stop before anything hard shows up. Platforms bring orchestration, policy, and observability with a heavy adoption cost. Teams building real systems usually need something in between: implementations of the standard patterns that are small enough to read in an afternoon, run as-is, and adapt without a rewrite.
 
-This toolkit grew out of production work on agentic AI platforms, where the same five patterns kept reappearing and the missing pieces were always the same: budgets, traces, and guardrail hooks. Most agent code we reviewed had none of the three. A runaway loop was one bad prompt away, nobody could reconstruct what an agent had done, and the tool boundary had no policy at all. ai-agent-toolkit bakes these in from the start so teams inherit them instead of rediscovering them the hard way. The design follows the same principle as our earlier work on API onboarding at scale: governance belongs in the plumbing, not in documentation [@kagitha2026ssrn].
+This toolkit is that middle ground. Each pattern is one module with no hidden framework magic. The control flow is plain code: loops with explicit bounds, steps with declared dependencies, state passed through typed dicts. When something fails, the failure is findable. That emphasis on boring, inspectable plumbing reflects the broader lesson of our work on production AI systems, where the engineering around the model mattered more than the model itself [@kagitha2024beyond].
 
 # Features
 
-**Tool-calling agent.** One agent, one loop: reason, call a tool, read the result, repeat until done or until the step budget runs out. Ships with search, math, and filesystem tools, in the spirit of the ReAct pattern [@yao2023react]. Every loop carries a step budget and a token budget, and each iteration is its own trace span, so a runaway loop is visible before the invoice arrives.
+**Tool-calling agent.** A ReAct-style loop [@yao2023react]: the model reasons, calls a tool, reads the result, and repeats, for at most five rounds. It ships with four tools: a calculator that safely evaluates math expressions, a Tavily web search, a local file reader capped at 50 KB, and a clock. Unknown tool calls are reported instead of crashing the loop.
 
-**Pipeline DAG.** Researcher, Writer, and Reviewer agents wired as LangGraph nodes and edges. The Reviewer works against explicit rejection criteria with a round limit, and failed drafts escalate to a human instead of looping forever.
+**RAG agent.** Loads documents from a text directory, a list of URLs, or a PDF, splits them into overlapping chunks, and indexes them in a vector store. Retrieval is top-4 similarity search. The prompt restricts the model to the retrieved context, and each chunk carries a source label, so answers stay grounded in the documents provided.
 
-**Supervisor/worker.** A supervisor decomposes a task, fans out to workers, and merges partial results, following the hierarchical pattern popularized by AutoGen [@wu2024autogen]. The merge logic tolerates partial failure: retries, quarantine, and honest partial summaries instead of invented completions.
+**Multi-agent pipeline.** Researcher, Writer, and Reviewer agents wired as LangGraph nodes with a conditional edge: the Reviewer approves the draft or sends it back to the Writer with feedback, for at most two revision rounds. Shared state is a typed dict, and a sequential fallback runs the same three steps if LangGraph is not installed.
 
-**RAG-grounded agent.** A retriever paired with the generator, with citations on answers and source checks so restricted documents never leak to unauthorized users.
+**Memory agent.** A conversational agent with a sliding window over the last twenty messages. Older messages roll into a running summary buffer that stays in the prompt. An interactive CLI supports resetting memory and checking message counts mid-chat.
 
-**Memory agent.** Sliding-window history plus rolling summaries, keyed by tenant and user, with retention rules on the summaries themselves.
+**QA evaluator.** Scores generated answers against a five-dimension rubric (correctness, completeness, relevance, clarity, safety) using an LLM judge, with a heuristic fallback when no API key is set. It assigns letter grades, explains low scores with recommendations, and can batch-evaluate test suites with aggregate pass rates.
 
-**Cross-cutting.** Every run produces one trace with spans for plans, agent calls, tool calls, and guardrail decisions, with token usage attached. Guardrail hooks sit at three points: input screening, per-tool allowlist checks, and output screening. Deny by default, and log every denial.
+**Web scraping agent.** Fetches pages with an in-memory cache and extracts clean text from HTML, as a lightweight input stage for the other agents.
 
-# Design notes
-
-The toolkit is deliberately boring. Explicit edges beat clever prompts: when the flow is code, the failure is findable. This mirrors the broader lesson from our work on deploying enterprise AI, where structure and measurement mattered more than model choice [@kagitha2024beyond; @kagitha2021cognitive]. The guardrail hooks apply the same check-before-execute discipline we previously used for flagging infrastructure-as-code vulnerabilities in CI/CD pipelines [@kagitha2021compliance].
+**Workflow agent.** Chains plain functions into a dependency-ordered workflow: topological sort decides the run order, each step retries up to twice on failure, results flow through shared state, and every run returns a report with per-step timing and status plus a text diagram of the plan.
 
 # References

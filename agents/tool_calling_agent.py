@@ -6,6 +6,9 @@ Usage:
     python -m agents.tool_calling_agent --query "What's the weather in Austin, TX?"
 """
 
+import ast
+import math
+import operator
 import os
 import sys
 from pathlib import Path
@@ -22,23 +25,54 @@ load_dotenv()
 
 # ── Custom Tools ────────────────────────────────────────────────────────────────
 
+_BIN_OPS = {
+    ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul,
+    ast.Div: operator.truediv, ast.FloorDiv: operator.floordiv,
+    ast.Mod: operator.mod, ast.Pow: operator.pow,
+}
+_UNARY_OPS = {ast.UAdd: operator.pos, ast.USub: operator.neg}
+_FUNCS = {
+    k: v for k, v in math.__dict__.items()
+    if callable(v) and not k.startswith("_")
+}
+_FUNCS.update({"abs": abs, "round": round, "min": min, "max": max})
+_CONSTS = {"pi": math.pi, "e": math.e, "tau": math.tau, "inf": math.inf}
+
+
+def _safe_eval(node):
+    """Evaluate a parsed expression, allowing only numbers, arithmetic and math functions."""
+    if isinstance(node, ast.Expression):
+        return _safe_eval(node.body)
+    if isinstance(node, ast.Constant) and type(node.value) in (int, float):
+        return node.value
+    if isinstance(node, ast.Name) and node.id in _CONSTS:
+        return _CONSTS[node.id]
+    if isinstance(node, ast.BinOp) and type(node.op) in _BIN_OPS:
+        left, right = _safe_eval(node.left), _safe_eval(node.right)
+        if isinstance(node.op, ast.Pow) and abs(right) > 1000:
+            raise ValueError("exponent too large")
+        return _BIN_OPS[type(node.op)](left, right)
+    if isinstance(node, ast.UnaryOp) and type(node.op) in _UNARY_OPS:
+        return _UNARY_OPS[type(node.op)](_safe_eval(node.operand))
+    if (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id in _FUNCS
+        and not node.keywords
+    ):
+        return _FUNCS[node.func.id](*[_safe_eval(a) for a in node.args])
+    raise ValueError(f"unsupported syntax: {type(node).__name__}")
+
+
 @tool
 def calculator(expression: str) -> str:
     """Evaluate a mathematical expression. Use Python math syntax.
-    
+
     Args:
         expression: A mathematical expression like '2 + 2' or 'sqrt(144)'
     """
-    import math
-    
-    # Safe math evaluation
-    allowed_names = {
-        k: v for k, v in math.__dict__.items() if not k.startswith("__")
-    }
-    allowed_names.update({"abs": abs, "round": round, "min": min, "max": max})
-    
     try:
-        result = eval(expression, {"__builtins__": {}}, allowed_names)
+        result = _safe_eval(ast.parse(expression.strip(), mode="eval"))
         return f"Result: {result}"
     except Exception as e:
         return f"Error evaluating '{expression}': {e}"
