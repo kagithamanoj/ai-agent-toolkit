@@ -8,6 +8,7 @@ Usage:
 import os
 import sys
 from pathlib import Path
+
 from dotenv import load_dotenv
 
 # Add project root to path so we can import agents/utils
@@ -18,6 +19,7 @@ load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")
 def demo_rag():
     """Quick RAG agent demo."""
     from langchain_core.documents import Document
+
     from agents.rag_agent import build_rag_chain
 
     docs = [

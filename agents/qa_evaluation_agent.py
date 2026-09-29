@@ -9,8 +9,9 @@ Usage:
     report = evaluator.evaluate(question, expected_answer, actual_answer)
 """
 
-import os
 import json
+import os
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -75,10 +76,10 @@ class QAEvaluator:
         score = 3  # Default to acceptable
 
         if criterion == "completeness":
-            if len(answer) > 200:
-                score = 4
-            elif len(answer) > 500:
+            if len(answer) > 500:
                 score = 5
+            elif len(answer) > 200:
+                score = 4
             elif len(answer) < 50:
                 score = 2
 
@@ -207,13 +208,13 @@ class QAEvaluator:
         print(f"{'='*60}")
         print(f"Q: {report['question'][:80]}...")
         print(f"A: {report['answer_preview']}")
-        print(f"\nScores (1-5):")
+        print("\nScores (1-5):")
         for criterion, result in report["scores"].items():
             bar = "█" * result["score"] + "░" * (5 - result["score"])
             print(f"  {criterion:15s} [{bar}] {result['score']}/5 — {result['reason']}")
         print(f"\n📈 Average: {report['average_score']}/5.0")
         if report["recommendations"]:
-            print(f"\n💡 Recommendations:")
+            print("\n💡 Recommendations:")
             for rec in report["recommendations"]:
                 print(f"  {rec}")
 

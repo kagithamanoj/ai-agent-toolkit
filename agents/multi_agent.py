@@ -9,7 +9,7 @@ Usage:
 import os
 import sys
 from pathlib import Path
-from typing import Annotated, TypedDict
+from typing import TypedDict
 
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -115,7 +115,7 @@ def should_continue(state: AgentState) -> str:
 def build_multi_agent_graph():
     """Build the multi-agent pipeline using LangGraph."""
     try:
-        from langgraph.graph import StateGraph, END
+        from langgraph.graph import END, StateGraph
 
         graph = StateGraph(AgentState)
 

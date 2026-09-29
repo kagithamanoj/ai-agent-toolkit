@@ -25,7 +25,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install ruff pytest
+          pip install ruff pytest pytest-cov
 
       - name: Lint with Ruff
         run: |
@@ -39,6 +39,5 @@ jobs:
           python -c "from agents.memory_agent import MemoryAgent; print('✅ memory_agent imports OK')"
           python -c "from utils.llm_config import get_llm, get_embeddings; print('✅ llm_config imports OK')"
 
-      - name: Run unit tests (if any)
-        run: |
-          pytest tests/ -v --tb=short 2>/dev/null || echo "No tests directory yet — import checks passed"
+      - name: Run unit tests
+        run: pytest tests/ -v --tb=short

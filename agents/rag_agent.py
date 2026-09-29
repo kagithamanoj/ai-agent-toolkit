@@ -6,24 +6,23 @@ Usage:
     python -m agents.rag_agent --query "What is attention in transformers?"
 """
 
-import os
 import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import (
     DirectoryLoader,
-    TextLoader,
     PyPDFLoader,
+    TextLoader,
     WebBaseLoader,
 )
-from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from utils.llm_config import get_openai_llm, get_embeddings, get_vector_store
+from utils.llm_config import get_openai_llm, get_vector_store
 
 load_dotenv()
 

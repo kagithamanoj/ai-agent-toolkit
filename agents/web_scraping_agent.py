@@ -9,10 +9,10 @@ Usage:
     result = agent.scrape("https://example.com", extract=["title", "links", "headings"])
 """
 
-import os
 import re
-from urllib.request import urlopen, Request
 from urllib.error import HTTPError
+from urllib.request import Request, urlopen
+
 from dotenv import load_dotenv
 
 load_dotenv()

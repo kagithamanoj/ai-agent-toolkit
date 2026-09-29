@@ -44,3 +44,9 @@ logs/
 *.pth
 *.gguf
 *.safetensors
+
+# macOS resource forks (external drives)
+._*
+.pytest_cache/
+.ruff_cache/
+.coverage
