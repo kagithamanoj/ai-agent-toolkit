@@ -44,4 +44,8 @@ This toolkit is that middle ground. Each pattern is one module with no hidden fr
 
 **Workflow agent.** Chains plain functions into a dependency-ordered workflow: topological sort decides the run order, each step retries up to twice on failure, results flow through shared state, and every run returns a report with per-step timing and status plus a text diagram of the plan.
 
+# AI usage disclosure
+
+Generative AI tools assisted in drafting this paper and in developing parts of the software, including code generation, refactoring, and copy-editing. The author reviewed, edited, and validated all AI-assisted outputs and made the core design decisions.
+
 # References
