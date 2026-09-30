@@ -1,0 +1,9 @@
+{
+  "tests/test_llm_config.py::test_openai_llm_uses_requested_model": true,
+  "tests/test_llm_config.py::test_openai_embeddings_construct": true,
+  "tests/test_memory_agent.py::test_chat_round_trip_updates_memory": true,
+  "tests/test_multi_agent.py::test_graph_runs_end_to_end_when_approved": true,
+  "tests/test_multi_agent.py::test_graph_loop_is_bounded_when_never_approved": true,
+  "tests/test_rag_agent.py::test_build_chain_requires_input": true,
+  "tests/test_rag_agent.py::test_chain_retrieves_and_passes_sources_to_prompt": true
+}

@@ -10,7 +10,9 @@ import ast
 import math
 import operator
 import os
+import random
 import sys
+import time
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -24,6 +26,26 @@ load_dotenv()
 
 
 # ── Custom Tools ────────────────────────────────────────────────────────────────
+
+def _call_with_retry(fn, *, max_attempts=3, base_delay=1.0):
+    """Call fn() with exponential backoff, retrying transient failures.
+
+    Waits base_delay * 2**attempt seconds between attempts (plus up to
+    0.5s of jitter so parallel callers do not retry in lockstep).
+    Returns fn()'s result on the first success. Raises the last
+    exception when every attempt fails.
+    """
+    last_exc = None
+    for attempt in range(max_attempts):
+        try:
+            return fn()
+        except Exception as e:
+            last_exc = e
+            if attempt == max_attempts - 1:
+                break
+            delay = base_delay * (2 ** attempt) + random.uniform(0, 0.5)
+            time.sleep(delay)
+    raise last_exc
 
 _BIN_OPS = {
     ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul,
@@ -82,6 +104,9 @@ def calculator(expression: str) -> str:
 def web_search(query: str) -> str:
     """Search the web for current information using Tavily.
     
+    The search call is retried up to 3 times with exponential backoff
+    (1s, 2s, 4s) so brief API hiccups do not fail the tool outright.
+    
     Args:
         query: The search query string
     """
@@ -89,7 +114,7 @@ def web_search(query: str) -> str:
         from tavily import TavilyClient
         
         client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
-        results = client.search(query, max_results=3)
+        results = _call_with_retry(lambda: client.search(query, max_results=3))
         
         output = []
         for r in results.get("results", []):

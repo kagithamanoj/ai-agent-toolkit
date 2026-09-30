@@ -1,3 +1,7 @@
+import sys
+import types
+
+import pytest
 from langchain_core.messages import AIMessage
 
 from agents import tool_calling_agent as tca
@@ -119,3 +123,83 @@ def test_calculator_rejects_sandbox_escapes():
 def test_calculator_supports_constants_and_unary():
     assert tca.calculator.invoke({"expression": "-pi"}) == f"Result: {-3.141592653589793}"
     assert tca.calculator.invoke({"expression": "2 ** 10"}) == "Result: 1024"
+
+
+# ── web_search retry tests ─────────────────────────────────────────────────────
+
+
+def _fake_tavily(monkeypatch, client_cls):
+    monkeypatch.setitem(
+        sys.modules, "tavily", types.SimpleNamespace(TavilyClient=client_cls)
+    )
+
+
+def test_retry_helper_raises_last_error_after_max_attempts():
+    calls = {"n": 0}
+
+    def boom():
+        calls["n"] += 1
+        raise ValueError("always fails")
+
+    with pytest.raises(ValueError, match="always fails"):
+        tca._call_with_retry(boom, max_attempts=2, base_delay=0)
+    assert calls["n"] == 2
+
+
+def test_web_search_retries_then_succeeds(monkeypatch):
+    sleeps = []
+    monkeypatch.setattr("time.sleep", lambda s: sleeps.append(s))
+    attempts = {"n": 0}
+
+    class FlakyClient:
+        def __init__(self, api_key=None):
+            pass
+
+        def search(self, query, max_results=3):
+            attempts["n"] += 1
+            if attempts["n"] < 3:
+                raise ConnectionError("transient failure")
+            return {
+                "results": [
+                    {
+                        "title": "Recovered",
+                        "content": "x" * 400,
+                        "url": "https://example.com",
+                    }
+                ]
+            }
+
+    _fake_tavily(monkeypatch, FlakyClient)
+    out = tca.web_search.invoke({"query": "something"})
+    assert "**Recovered**" in out
+    assert attempts["n"] == 3
+    assert len(sleeps) == 2
+    assert sleeps[0] < sleeps[1]  # backoff grows between attempts
+
+
+def test_web_search_reports_error_after_retries_exhausted(monkeypatch):
+    monkeypatch.setattr("time.sleep", lambda s: None)
+
+    class DeadClient:
+        def __init__(self, api_key=None):
+            pass
+
+        def search(self, query, max_results=3):
+            raise TimeoutError("service down")
+
+    _fake_tavily(monkeypatch, DeadClient)
+    out = tca.web_search.invoke({"query": "something"})
+    assert out.startswith("Search error")
+    assert "service down" in out
+
+
+def test_web_search_missing_tavily_reports_install_hint(monkeypatch):
+    def fail_import(name, *args, **kwargs):
+        if name == "tavily":
+            raise ImportError("no module")
+        return _real_import(name, *args, **kwargs)
+
+    _real_import = __import__
+    monkeypatch.setattr("builtins.__import__", fail_import)
+    out = tca.web_search.invoke({"query": "something"})
+    assert "Tavily is not installed" in out
