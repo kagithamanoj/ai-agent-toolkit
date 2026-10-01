@@ -22,6 +22,8 @@ from langchain_openai import ChatOpenAI
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from utils.usage import record_call, summarize_calls
+
 load_dotenv()
 
 
@@ -188,14 +190,24 @@ def build_tool_agent(model: str = "gpt-4o-mini", tools: list = None):
     return llm_with_tools, tools
 
 
-def run_agent_loop(query: str, model: str = "gpt-4o-mini", max_iterations: int = 5):
+def run_agent_loop(
+    query: str,
+    model: str = "gpt-4o-mini",
+    max_iterations: int = 5,
+    usage_log: list = None,
+):
     """
     Run an agent loop that processes tool calls iteratively.
-    
+
     Args:
         query: User question
         model: LLM model name
         max_iterations: Maximum number of tool-calling rounds
+        usage_log: Optional list that receives one usage dict per LLM call
+            (round, model, prompt_tokens, completion_tokens, cost_usd)
+
+    Returns:
+        The agent's final answer text.
     """
     from langchain_core.messages import SystemMessage, ToolMessage
 
@@ -207,13 +219,33 @@ def run_agent_loop(query: str, model: str = "gpt-4o-mini", max_iterations: int =
         HumanMessage(content=query),
     ]
 
+    calls = []
+
+    def finish(answer):
+        summary = summarize_calls(calls)
+        print(
+            f"  📊 Usage: {summary['calls']} LLM call(s), "
+            f"{summary['total_tokens']} tokens, ~${summary['total_cost_usd']:.6f}"
+        )
+        if usage_log is not None:
+            usage_log.extend(calls)
+        return answer
+
     for i in range(max_iterations):
         response = llm_with_tools.invoke(messages)
         messages.append(response)
 
+        # Log per-call token usage and estimated cost
+        call = record_call(calls, model=model, round_no=i + 1, response=response)
+        print(
+            f"  📊 LLM call {call['round']}: "
+            f"{call['prompt_tokens']} in / {call['completion_tokens']} out tokens, "
+            f"~${call['cost_usd']:.6f}"
+        )
+
         # If no tool calls, we're done
         if not response.tool_calls:
-            return response.content
+            return finish(response.content)
 
         # Process each tool call
         for tc in response.tool_calls:
@@ -228,7 +260,7 @@ def run_agent_loop(query: str, model: str = "gpt-4o-mini", max_iterations: int =
 
             messages.append(ToolMessage(content=str(result), tool_call_id=tc["id"]))
 
-    return "Max iterations reached. Last response: " + messages[-1].content
+    return finish("Max iterations reached. Last response: " + messages[-1].content)
 
 
 # ── CLI Entry Point ─────────────────────────────────────────────────────────────

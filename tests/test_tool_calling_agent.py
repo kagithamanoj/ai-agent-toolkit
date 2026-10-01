@@ -203,3 +203,71 @@ def test_web_search_missing_tavily_reports_install_hint(monkeypatch):
     monkeypatch.setattr("builtins.__import__", fail_import)
     out = tca.web_search.invoke({"query": "something"})
     assert "Tavily is not installed" in out
+
+
+# ── per-call token usage & cost logging ───────────────────────────────────────
+
+
+def _usage_message(content="", tool_calls=None, in_tok=100, out_tok=20):
+    return AIMessage(
+        content=content,
+        tool_calls=tool_calls or [],
+        usage_metadata={
+            "input_tokens": in_tok,
+            "output_tokens": out_tok,
+            "total_tokens": in_tok + out_tok,
+        },
+    )
+
+
+def test_loop_logs_usage_into_usage_log(monkeypatch, capsys):
+    call = {"name": "calculator", "args": {"expression": "2+2"}, "id": "c1"}
+    _patch_llm(
+        monkeypatch,
+        [
+            _usage_message(tool_calls=[call], in_tok=100, out_tok=10),
+            _usage_message(content="It is 4", in_tok=50, out_tok=5),
+        ],
+    )
+    usage_log = []
+    answer = tca.run_agent_loop("2+2?", usage_log=usage_log)
+
+    assert answer == "It is 4"
+    assert len(usage_log) == 2
+    assert usage_log[0]["round"] == 1
+    assert usage_log[0]["model"] == "gpt-4o-mini"
+    assert usage_log[0]["prompt_tokens"] == 100
+    assert usage_log[0]["completion_tokens"] == 10
+    # 100 in + 10 out at gpt-4o-mini prices
+    expected_first = 100 / 1000 * 0.00015 + 10 / 1000 * 0.0006
+    assert usage_log[0]["cost_usd"] == pytest.approx(expected_first)
+    assert usage_log[1]["round"] == 2
+
+    out = capsys.readouterr().out
+    assert "LLM call 1" in out and "LLM call 2" in out
+    assert "Usage:" in out
+
+
+def test_loop_usage_missing_metadata_does_not_crash(monkeypatch, capsys):
+    # Plain AIMessages carry no usage metadata; the loop should still work.
+    _patch_llm(monkeypatch, [AIMessage(content="done")])
+    usage_log = []
+    assert tca.run_agent_loop("hi", usage_log=usage_log) == "done"
+    assert usage_log == [
+        {
+            "round": 1,
+            "model": "gpt-4o-mini",
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "cost_usd": 0.0,
+        }
+    ]
+
+
+def test_loop_usage_uses_model_pricing(monkeypatch):
+    _patch_llm(monkeypatch, [_usage_message(content="ok", in_tok=1000, out_tok=1000)])
+    usage_log = []
+    tca.run_agent_loop("hi", model="gpt-4o", usage_log=usage_log)
+    expected = 1000 / 1000 * 0.0025 + 1000 / 1000 * 0.010
+    assert usage_log[0]["cost_usd"] == pytest.approx(expected)
+    assert usage_log[0]["model"] == "gpt-4o"
