@@ -271,3 +271,37 @@ def test_loop_usage_uses_model_pricing(monkeypatch):
     expected = 1000 / 1000 * 0.0025 + 1000 / 1000 * 0.010
     assert usage_log[0]["cost_usd"] == pytest.approx(expected)
     assert usage_log[0]["model"] == "gpt-4o"
+
+
+# ── --max-rounds CLI flag ──────────────────────────────────────────────────────
+
+
+def _run_main(monkeypatch, argv):
+    captured = {}
+    monkeypatch.setattr(
+        tca,
+        "run_agent_loop",
+        lambda *args, **kwargs: captured.update({"args": args, "kwargs": kwargs})
+        or "the answer",
+    )
+    monkeypatch.setattr(sys, "argv", ["tool_calling_agent.py"] + argv)
+    tca.main()
+    return captured
+
+
+def test_main_passes_max_rounds_to_loop(monkeypatch):
+    captured = _run_main(monkeypatch, ["--query", "hi", "--max-rounds", "3"])
+    assert captured["kwargs"]["max_iterations"] == 3
+    assert captured["kwargs"]["model"] == "gpt-4o-mini"
+
+
+def test_main_defaults_max_rounds_to_five(monkeypatch):
+    captured = _run_main(monkeypatch, ["--query", "hi"])
+    assert captured["kwargs"]["max_iterations"] == 5
+
+
+def test_main_rejects_non_positive_max_rounds(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["tool_calling_agent.py", "-q", "hi", "--max-rounds", "0"])
+    with pytest.raises(SystemExit) as exc:
+        tca.main()
+    assert exc.value.code != 0

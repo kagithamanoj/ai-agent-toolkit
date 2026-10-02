@@ -4,6 +4,7 @@ Demonstrates how to build an agent that can search the web, do math, and more.
 
 Usage:
     python -m agents.tool_calling_agent --query "What's the weather in Austin, TX?"
+    python -m agents.tool_calling_agent -q "2+2?" --max-rounds 3
 """
 
 import ast
@@ -271,10 +272,19 @@ def main():
     parser = argparse.ArgumentParser(description="Tool-Calling Agent")
     parser.add_argument("--query", "-q", type=str, required=True, help="Question to ask")
     parser.add_argument("--model", "-m", type=str, default="gpt-4o-mini", help="LLM model")
+    parser.add_argument(
+        "--max-rounds",
+        type=int,
+        default=5,
+        help="Maximum number of tool-calling rounds (default: 5)",
+    )
     args = parser.parse_args()
 
+    if args.max_rounds < 1:
+        parser.error("--max-rounds must be at least 1")
+
     print(f"🤔 Question: {args.query}\n")
-    answer = run_agent_loop(args.query, model=args.model)
+    answer = run_agent_loop(args.query, model=args.model, max_iterations=args.max_rounds)
     print(f"\n🤖 Answer: {answer}")
 
 
