@@ -23,6 +23,7 @@ ai-agent-toolkit/
 ├── tests/              # Offline pytest suite (no API keys needed)
 ├── examples/           # Integration demos
 ├── docs/               # Architecture and design specs
+├── pyproject.toml      # Packaging
 └── requirements.txt    # Project dependencies
 ```
 
@@ -31,8 +32,12 @@ ai-agent-toolkit/
 Requires Python 3.10 or newer.
 
 ```bash
-# Install dependencies
-pip install -r requirements.txt
+git clone https://github.com/kagithamanoj/ai-agent-toolkit.git
+cd ai-agent-toolkit
+
+# Install the package (add ",search" to enable the Tavily web-search tool)
+pip install -e ".[dev]"
+# or, without packaging:  pip install -r requirements.txt
 
 # Environment Setup
 cp .env.example .env
@@ -54,6 +59,12 @@ python -m agents.tool_calling_agent -q "What is 15% of 2340?"
 python -m agents.multi_agent -t "Advancements in LLM Orchestration"
 ```
 
+The tool-calling agent logs token usage and estimated cost per LLM call, and the loop bound can be set from the command line:
+
+```bash
+python -m agents.tool_calling_agent -q "What is 15% of 2340?" --max-rounds 3
+```
+
 Or use an agent from Python:
 
 ```python
@@ -67,14 +78,29 @@ print(wf.run(url="abc")["state"])   # {'load': 'ABC', 'size': 3}
 
 For a comprehensive demonstration of all patterns, refer to `examples/quickstart.py`.
 
+### What each module needs
+
+| Module | Needs |
+|---|---|
+| `tool_calling_agent`, `multi_agent`, `memory_agent`, `rag_agent` | `OPENAI_API_KEY` (rag also uses OpenAI embeddings) |
+| `tool_calling_agent` web search | `TAVILY_API_KEY` and the `search` extra |
+| `qa_evaluation_agent` | `OPENAI_API_KEY` optional; falls back to offline heuristics |
+| `web_scraping_agent`, `workflow_agent` | nothing (standard library only) |
+
+Safety notes: the calculator tool evaluates an arithmetic-only syntax tree (no `eval`), and the file reader marks content that looks like a prompt-injection attempt as untrusted data. That scan is a heuristic warning, not a security boundary; do not expose the file reader to untrusted users.
+
 ## Testing
 
 The test suite uses fake LLMs and mocked network calls, so it needs no API keys and no internet:
 
 ```bash
-pip install pytest
-python -m pytest tests/ -v
+pip install pytest pytest-cov
+python -m pytest tests/ -v --cov=agents --cov=utils
 ```
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Release notes are in [CHANGELOG.md](CHANGELOG.md); to cite the software, see [CITATION.cff](CITATION.cff).
 
 ## License
 
