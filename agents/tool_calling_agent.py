@@ -5,6 +5,11 @@ Demonstrates how to build an agent that can search the web, do math, and more.
 Usage:
     python -m agents.tool_calling_agent --query "What's the weather in Austin, TX?"
     python -m agents.tool_calling_agent -q "2+2?" --max-rounds 3
+    python -m agents.tool_calling_agent -q "What is 15% of 2340?" -c examples/agent_config.yaml
+
+Agent defaults (model, max_rounds, tools) can live in a YAML config
+file (see examples/agent_config.yaml). Explicit CLI flags override the
+config file, which overrides the built-in defaults.
 """
 
 import ast
@@ -25,6 +30,7 @@ from langchain_openai import ChatOpenAI
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from utils.usage import record_call, summarize_calls
+from utils.agent_config import DEFAULT_MAX_ROUNDS, DEFAULT_MODEL, load_agent_config
 
 load_dotenv()
 
@@ -223,6 +229,23 @@ def current_datetime() -> str:
 
 TOOLS = [calculator, web_search, read_file, current_datetime]
 
+_TOOL_MAP = {t.name: t for t in TOOLS}
+
+
+def resolve_tools(names):
+    """Map a list of tool names from a config file to tool objects.
+
+    Raises ValueError if any name is not a known built-in tool.
+    """
+    tools = []
+    for name in names:
+        if name not in _TOOL_MAP:
+            raise ValueError(
+                f"Unknown tool: {name}. Available: {', '.join(_TOOL_MAP)}"
+            )
+        tools.append(_TOOL_MAP[name])
+    return tools
+
 SYSTEM_PROMPT = """You are a helpful AI assistant with access to tools. 
 Use tools when needed to provide accurate, up-to-date information.
 Always explain your reasoning and cite your sources when using web search."""
@@ -257,6 +280,7 @@ def run_agent_loop(
     model: str = "gpt-4o-mini",
     max_iterations: int = 5,
     usage_log: list = None,
+    tools: list = None,
 ):
     """
     Run an agent loop that processes tool calls iteratively.
@@ -267,13 +291,14 @@ def run_agent_loop(
         max_iterations: Maximum number of tool-calling rounds
         usage_log: Optional list that receives one usage dict per LLM call
             (round, model, prompt_tokens, completion_tokens, cost_usd)
+        tools: List of tool objects (defaults to all built-in tools)
 
     Returns:
         The agent's final answer text.
     """
     from langchain_core.messages import SystemMessage, ToolMessage
 
-    llm_with_tools, tools = build_tool_agent(model=model)
+    llm_with_tools, tools = build_tool_agent(model=model, tools=tools)
     tool_map = {t.name: t for t in tools}
 
     messages = [
@@ -332,20 +357,45 @@ def main():
 
     parser = argparse.ArgumentParser(description="Tool-Calling Agent")
     parser.add_argument("--query", "-q", type=str, required=True, help="Question to ask")
-    parser.add_argument("--model", "-m", type=str, default="gpt-4o-mini", help="LLM model")
+    parser.add_argument(
+        "--config",
+        "-c",
+        type=str,
+        default=None,
+        help="YAML config file with agent defaults (model, max_rounds, tools)",
+    )
+    parser.add_argument(
+        "--model", "-m", type=str, default=None, help="LLM model (overrides config file)"
+    )
     parser.add_argument(
         "--max-rounds",
         type=int,
-        default=5,
-        help="Maximum number of tool-calling rounds (default: 5)",
+        default=None,
+        help="Maximum number of tool-calling rounds (overrides config file)",
     )
     args = parser.parse_args()
 
-    if args.max_rounds < 1:
+    # Precedence: CLI flag > config file > built-in default.
+    cfg = load_agent_config(args.config) if args.config else None
+
+    def pick(flag_value, key, default):
+        if flag_value is not None:
+            return flag_value
+        if cfg is not None:
+            return cfg[key]
+        return default
+
+    model = pick(args.model, "model", DEFAULT_MODEL)
+    max_rounds = pick(args.max_rounds, "max_rounds", DEFAULT_MAX_ROUNDS)
+    tools = resolve_tools(cfg["tools"]) if cfg is not None else None
+
+    if max_rounds < 1:
         parser.error("--max-rounds must be at least 1")
 
     print(f"🤔 Question: {args.query}\n")
-    answer = run_agent_loop(args.query, model=args.model, max_iterations=args.max_rounds)
+    answer = run_agent_loop(
+        args.query, model=model, max_iterations=max_rounds, tools=tools
+    )
     print(f"\n🤖 Answer: {answer}")
 
 

@@ -1,0 +1,21 @@
+# Example agent config for the tool-calling agent.
+#
+# Copy this file and tweak it, then run:
+#   python -m agents.tool_calling_agent -q "What is 15% of 2340?" -c my_config.yaml
+#
+# Any key may be omitted. Missing keys fall back to built-in defaults.
+# Explicit CLI flags (--model, --max-rounds) override these values.
+
+# LLM model name (default: gpt-4o-mini)
+model: gpt-4o-mini
+
+# Max tool-calling rounds, must be at least 1 (default: 5)
+max_rounds: 5
+
+# Subset of built-in tools to enable (default: all four).
+# Available: calculator, web_search, read_file, current_datetime
+tools:
+  - calculator
+  - web_search
+  - read_file
+  - current_datetime

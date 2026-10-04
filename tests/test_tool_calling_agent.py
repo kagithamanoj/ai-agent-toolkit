@@ -19,10 +19,10 @@ class FakeToolLLM:
         return self.replies.pop(0)
 
 
-def _patch_llm(monkeypatch, replies, tools=None):
+def _patch_llm(monkeypatch, replies, tool_list=None):
     llm = FakeToolLLM(replies)
     monkeypatch.setattr(
-        tca, "build_tool_agent", lambda model=None, tools_=None: (llm, tools or tca.TOOLS)
+        tca, "build_tool_agent", lambda model=None, tools=None: (llm, tool_list or tca.TOOLS)
     )
     return llm
 

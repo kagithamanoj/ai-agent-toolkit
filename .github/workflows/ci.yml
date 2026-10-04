@@ -40,4 +40,4 @@ jobs:
           python -c "from utils.llm_config import get_openai_llm, get_embeddings; print('✅ llm_config imports OK')"
 
       - name: Run unit tests
-        run: pytest tests/ -v --tb=short --cov=agents --cov=utils --cov-report=term-missing
+        run: pytest tests/ -v --tb=short
