@@ -67,6 +67,26 @@ print(wf.run(url="abc")["state"])   # {'load': 'ABC', 'size': 3}
 
 For a comprehensive demonstration of all patterns, refer to `examples/quickstart.py`.
 
+## Evaluation harness
+
+`examples/eval_harness.py` runs all seven patterns against a fixed task set and
+prints a comparison table. It is fully offline: deterministic stub LLMs stand
+in for the real model, a lexical fake embedding stands in for the embedding
+service, and the web-scraping tasks use local fixture data, so results are
+reproducible with no API keys and no network access. The harness measures what
+each pattern actually does (RAG retrieval hit rate, real calculator tool
+execution, cross-turn memory recall, rubric discrimination, extraction checks,
+workflow retries) rather than LLM answer quality.
+
+```bash
+python -m examples.eval_harness              # run all seven patterns
+python -m examples.eval_harness -p rag       # run one pattern
+python -m examples.eval_harness --list       # show the fixed task set
+```
+
+It exits 0 when every task passes and 1 otherwise, and one broken pattern
+cannot abort the rest of the table.
+
 ### Agent config files
 
 The tool-calling agent accepts a YAML config file for its defaults, so you do
