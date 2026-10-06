@@ -14,6 +14,71 @@ Production-grade agent patterns using LangChain and LangGraph. This toolkit cont
 
 ## Architecture
 
+How the seven patterns relate. Shared plumbing (config, LLM factory, usage tracking) lives in `utils/`; each pattern is a standalone module in `agents/` with its own offline test coverage.
+
+```mermaid
+flowchart TB
+    subgraph patterns["ai-agent-toolkit patterns"]
+        direction LR
+        RAG["RAG Agent\nrag_agent.py"] -->
+        TOOL["Tool-Calling Agent\ntool_calling_agent.py"] -->
+        MULTI["Multi-Agent System\nmulti_agent.py"] -->
+        MEM["Memory Agent\nmemory_agent.py"] -->
+        WORK["Workflow Agent\nworkflow_agent.py"] -->
+        WEB["Web Scraping Agent\nweb_scraping_agent.py"] -->
+        QA["QA Evaluation Agent\nqa_evaluation_agent.py"]
+    end
+
+    subgraph ragflow["RAG Agent"]
+        direction LR
+        rq["question"] --> ret["retrieve top-k chunks"] --> prompt["build context prompt"] --> llm["LLM"] --> ra["answer"]
+    end
+
+    subgraph reactflow["Tool-Calling Agent (ReAct)"]
+        direction LR
+        tq["task"] --> reason["reasoning step"] --> act["call tool\n(search, math, files)"] --> obs["observation"]
+        obs --> |"more needed"| reason
+        obs --> |"done"| ta["final answer"]
+    end
+
+    subgraph dagflow["Multi-Agent DAG"]
+        direction LR
+        topic["topic"] --> researcher["Researcher"] --> writer["Writer"] --> reviewer["Reviewer"] --> article["final article"]
+    end
+
+    subgraph memflow["Memory Agent"]
+        direction LR
+        mq["message"] --> hist["sliding-window history"] --> trim{"over window?"}
+        trim --> |yes| sum["summarize into memory"] --> ma["reply with context"]
+        trim --> |no| ma
+    end
+
+    subgraph workflow["Workflow Agent"]
+        direction LR
+        steps["dependency-ordered steps"] --> exec["run in order"] --> retry["retry failed step\n(backoff)"] --> report["execution report"]
+    end
+
+    subgraph webflow["Web Scraping Agent"]
+        direction LR
+        url["URL"] --> fetch["fetch page"] --> parse["parse HTML"] --> crawl{"follow links?"}
+        crawl --> |yes| fetch
+        crawl --> |no| data["structured data"]
+    end
+
+    subgraph qaflow["QA Evaluation Agent"]
+        direction LR
+        qa["question + answer"] --> rubric["rubric criteria"] --> grade["grade with LLM\n(heuristic fallback)"] --> score["score + feedback"]
+    end
+
+    RAG --- ragflow
+    TOOL --- reactflow
+    MULTI --- dagflow
+    MEM --- memflow
+    WORK --- workflow
+    WEB --- webflow
+    QA --- qaflow
+```
+
 The project follows a standard modular structure for easy integration:
 
 ```text
