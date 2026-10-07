@@ -2,7 +2,7 @@ import sys
 import types
 
 import pytest
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, AIMessageChunk
 
 from agents import tool_calling_agent as tca
 
@@ -355,3 +355,99 @@ def test_main_rejects_non_positive_max_rounds(monkeypatch, capsys):
     with pytest.raises(SystemExit) as exc:
         tca.main()
     assert exc.value.code != 0
+
+
+# ── streaming output ───────────────────────────────────────────────────────────
+
+
+class FakeStreamingLLM:
+    """Yields scripted AIMessageChunks per round, like a real stream API."""
+
+    def __init__(self, chunk_scripts):
+        # chunk_scripts: one list of chunk lists per model call
+        self.chunk_scripts = [list(s) for s in chunk_scripts]
+        self.seen = []
+
+    def stream(self, messages):
+        self.seen.append(list(messages))
+        return iter(self.chunk_scripts.pop(0))
+
+
+def _stream_chunks(text, tool_calls=None, in_tok=0, out_tok=0, usage_on_last=True):
+    """Split text into one-word AIMessageChunks, optionally carrying usage."""
+    words = text.split(" ")
+    chunks = []
+    for i, word in enumerate(words):
+        piece = word if i == len(words) - 1 else word + " "
+        chunk = AIMessageChunk(content=piece)
+        if tool_calls and i == 0:
+            chunk = AIMessageChunk(content=piece, tool_calls=tool_calls)
+        if usage_on_last and i == len(words) - 1:
+            chunk.usage_metadata = {
+                "input_tokens": in_tok,
+                "output_tokens": out_tok,
+                "total_tokens": in_tok + out_tok,
+            }
+        chunks.append(chunk)
+    return chunks
+
+
+def _patch_streaming_llm(monkeypatch, chunk_scripts, tool_list=None):
+    llm = FakeStreamingLLM(chunk_scripts)
+    monkeypatch.setattr(
+        tca,
+        "build_tool_agent",
+        lambda model=None, tools=None: (llm, tool_list or tca.TOOLS),
+    )
+    return llm
+
+
+def test_stream_mode_prints_tokens_and_assembles_answer(monkeypatch, capsys):
+    _patch_streaming_llm(
+        monkeypatch,
+        [_stream_chunks("It is four", in_tok=10, out_tok=3)],
+    )
+    answer = tca.run_agent_loop("2+2?", stream=True)
+    assert answer == "It is four"
+
+    out = capsys.readouterr().out
+    assert "It is four" in out
+
+
+def test_stream_mode_logs_usage_and_still_runs_tools(monkeypatch, capsys):
+    call = {"name": "calculator", "args": {"expression": "2+2"}, "id": "c1"}
+    llm = _patch_streaming_llm(
+        monkeypatch,
+        [
+            _stream_chunks("", tool_calls=[call], in_tok=100, out_tok=10),
+            _stream_chunks("It is 4", in_tok=50, out_tok=5),
+        ],
+    )
+    usage_log = []
+    answer = tca.run_agent_loop("2+2?", stream=True, usage_log=usage_log)
+
+    assert answer == "It is 4"
+    # tool calls from merged chunks are executed and fed back
+    assert llm.seen[1][-1].content == "Result: 4"
+    # usage tracking still works on the merged message
+    assert len(usage_log) == 2
+    assert usage_log[0]["prompt_tokens"] == 100
+    assert usage_log[1]["completion_tokens"] == 5
+    out = capsys.readouterr().out
+    assert "It is 4" in out
+    assert "LLM call 1" in out
+
+
+def test_stream_mode_handles_empty_chunk_stream(monkeypatch, capsys):
+    _patch_streaming_llm(monkeypatch, [[]])
+    assert tca.run_agent_loop("hi", stream=True) == ""
+
+
+def test_main_passes_stream_flag_to_loop(monkeypatch):
+    captured = _run_main(monkeypatch, ["--query", "hi", "--stream"])
+    assert captured["kwargs"]["stream"] is True
+
+
+def test_main_defaults_stream_to_false(monkeypatch):
+    captured = _run_main(monkeypatch, ["--query", "hi"])
+    assert captured["kwargs"]["stream"] is False

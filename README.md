@@ -115,6 +115,9 @@ python -m agents.rag_agent -q "Explain the core concepts of RAG"
 # Run Tool-Calling demo
 python -m agents.tool_calling_agent -q "What is 15% of 2340?"
 
+# Same demo, printing the reply token by token as it arrives
+python -m agents.tool_calling_agent -q "What is 15% of 2340?" --stream
+
 # Run Multi-Agent demo
 python -m agents.multi_agent -t "Advancements in LLM Orchestration"
 ```

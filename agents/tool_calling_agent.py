@@ -6,10 +6,14 @@ Usage:
     python -m agents.tool_calling_agent --query "What's the weather in Austin, TX?"
     python -m agents.tool_calling_agent -q "2+2?" --max-rounds 3
     python -m agents.tool_calling_agent -q "What is 15% of 2340?" -c examples/agent_config.yaml
+    python -m agents.tool_calling_agent -q "2+2?" --stream
 
 Agent defaults (model, max_rounds, tools) can live in a YAML config
 file (see examples/agent_config.yaml). Explicit CLI flags override the
 config file, which overrides the built-in defaults.
+
+The --stream flag prints the model's reply token by token as it
+arrives instead of waiting for the full response.
 """
 
 import ast
@@ -23,7 +27,7 @@ import time
 from pathlib import Path
 
 from dotenv import load_dotenv
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 
@@ -275,12 +279,42 @@ def build_tool_agent(model: str = "gpt-4o-mini", tools: list = None):
     return llm_with_tools, tools
 
 
+def _print_stream_content(content):
+    """Print one streamed chunk's text immediately, without a newline."""
+    if isinstance(content, str):
+        print(content, end="", flush=True)
+    elif isinstance(content, list):
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                print(block.get("text", ""), end="", flush=True)
+
+
+def _stream_response(llm, messages):
+    """Stream the model's reply, printing tokens as they arrive.
+
+    Returns the reassembled AIMessage (chunk addition merges content,
+    tool calls, and usage metadata).
+    """
+    chunks = []
+    for chunk in llm.stream(messages):
+        chunks.append(chunk)
+        _print_stream_content(chunk.content)
+    print()  # end the streamed line before the usage/tool prints
+    if not chunks:
+        return AIMessage(content="")
+    response = chunks[0]
+    for chunk in chunks[1:]:
+        response = response + chunk
+    return response
+
+
 def run_agent_loop(
     query: str,
     model: str = "gpt-4o-mini",
     max_iterations: int = 5,
     usage_log: list = None,
     tools: list = None,
+    stream: bool = False,
 ):
     """
     Run an agent loop that processes tool calls iteratively.
@@ -292,6 +326,9 @@ def run_agent_loop(
         usage_log: Optional list that receives one usage dict per LLM call
             (round, model, prompt_tokens, completion_tokens, cost_usd)
         tools: List of tool objects (defaults to all built-in tools)
+        stream: When True, print the model's reply token by token as it
+            arrives (via the LLM's stream API) instead of waiting for
+            the full response.
 
     Returns:
         The agent's final answer text.
@@ -319,7 +356,10 @@ def run_agent_loop(
         return answer
 
     for i in range(max_iterations):
-        response = llm_with_tools.invoke(messages)
+        if stream:
+            response = _stream_response(llm_with_tools, messages)
+        else:
+            response = llm_with_tools.invoke(messages)
         messages.append(response)
 
         # Log per-call token usage and estimated cost
@@ -373,6 +413,11 @@ def main():
         default=None,
         help="Maximum number of tool-calling rounds (overrides config file)",
     )
+    parser.add_argument(
+        "--stream",
+        action="store_true",
+        help="Print the model's reply token by token as it arrives",
+    )
     args = parser.parse_args()
 
     # Precedence: CLI flag > config file > built-in default.
@@ -394,7 +439,8 @@ def main():
 
     print(f"🤔 Question: {args.query}\n")
     answer = run_agent_loop(
-        args.query, model=model, max_iterations=max_rounds, tools=tools
+        args.query, model=model, max_iterations=max_rounds, tools=tools,
+        stream=args.stream,
     )
     print(f"\n🤖 Answer: {answer}")
 

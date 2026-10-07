@@ -101,11 +101,12 @@ def test_resolve_tools_unknown_name_raises():
 def _patch_run(monkeypatch):
     seen = {}
 
-    def fake_run(query, model=None, max_iterations=None, tools=None):
+    def fake_run(query, model=None, max_iterations=None, tools=None, stream=False):
         seen["query"] = query
         seen["model"] = model
         seen["max_iterations"] = max_iterations
         seen["tools"] = None if tools is None else [t.name for t in tools]
+        seen["stream"] = stream
         return "done"
 
     monkeypatch.setattr(tca, "run_agent_loop", fake_run)
@@ -124,6 +125,7 @@ def test_cli_config_used_for_defaults(tmp_path, monkeypatch, capsys):
         "model": "gpt-4o",
         "max_iterations": 2,
         "tools": ["calculator"],
+        "stream": False,
     }
 
 
