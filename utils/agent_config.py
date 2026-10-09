@@ -2,7 +2,7 @@
 Agent YAML config file support.
 
 A config file sets defaults for agent runs without repeating long CLI
-flags. The file is plain YAML with up to three keys:
+flags. The file is plain YAML with up to four keys:
 
     model: gpt-4o-mini        # LLM model name
     max_rounds: 5             # max tool-calling rounds
@@ -11,6 +11,7 @@ flags. The file is plain YAML with up to three keys:
       - web_search
       - read_file
       - current_datetime
+    tool_timeout: 30          # per-tool call timeout in seconds
 
 Any key may be omitted; missing keys fall back to the built-in
 defaults. CLI flags still take precedence over values from the file.
@@ -23,12 +24,14 @@ try:
 except ImportError:  # pragma: no cover - guarded at call time
     yaml = None
 
-# Built-in defaults: model, rounds, and the full set of built-in tools.
+# Built-in defaults: model, rounds, the full set of built-in tools,
+# and the per-tool call timeout in seconds.
 DEFAULT_MODEL = "gpt-4o-mini"
 DEFAULT_MAX_ROUNDS = 5
 DEFAULT_TOOLS = ["calculator", "web_search", "read_file", "current_datetime"]
+DEFAULT_TOOL_TIMEOUT = 30.0
 
-_KNOWN_KEYS = {"model", "max_rounds", "tools"}
+_KNOWN_KEYS = {"model", "max_rounds", "tools", "tool_timeout"}
 
 
 def _require_yaml():
@@ -46,9 +49,9 @@ def load_agent_config(path):
         path: Path to the YAML config file.
 
     Returns:
-        A dict with keys ``model`` (str), ``max_rounds`` (int) and
-        ``tools`` (list of tool-name strings), all resolved against
-        the built-in defaults.
+        A dict with keys ``model`` (str), ``max_rounds`` (int),
+        ``tools`` (list of tool-name strings) and ``tool_timeout``
+        (float, seconds), all resolved against the built-in defaults.
 
     Raises:
         FileNotFoundError: If the file does not exist.
@@ -100,4 +103,17 @@ def load_agent_config(path):
     if len(set(tools)) != len(tools):
         raise ValueError(f"Config file {path}: 'tools' contains duplicates")
 
-    return {"model": model, "max_rounds": max_rounds, "tools": list(tools)}
+    tool_timeout = data.get("tool_timeout", DEFAULT_TOOL_TIMEOUT)
+    if isinstance(tool_timeout, bool) or not isinstance(tool_timeout, (int, float)):
+        raise ValueError(
+            f"Config file {path}: 'tool_timeout' must be a number of seconds"
+        )
+    if tool_timeout <= 0:
+        raise ValueError(f"Config file {path}: 'tool_timeout' must be positive")
+
+    return {
+        "model": model,
+        "max_rounds": max_rounds,
+        "tools": list(tools),
+        "tool_timeout": float(tool_timeout),
+    }

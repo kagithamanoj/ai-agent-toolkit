@@ -20,6 +20,7 @@ def test_defaults_when_file_is_empty(tmp_path):
         "model": "gpt-4o-mini",
         "max_rounds": 5,
         "tools": ["calculator", "web_search", "read_file", "current_datetime"],
+        "tool_timeout": 30.0,
     }
 
 
@@ -101,12 +102,16 @@ def test_resolve_tools_unknown_name_raises():
 def _patch_run(monkeypatch):
     seen = {}
 
-    def fake_run(query, model=None, max_iterations=None, tools=None, stream=False):
+    def fake_run(
+        query, model=None, max_iterations=None, tools=None, stream=False,
+        tool_timeout=None,
+    ):
         seen["query"] = query
         seen["model"] = model
         seen["max_iterations"] = max_iterations
         seen["tools"] = None if tools is None else [t.name for t in tools]
         seen["stream"] = stream
+        seen["tool_timeout"] = tool_timeout
         return "done"
 
     monkeypatch.setattr(tca, "run_agent_loop", fake_run)
@@ -126,7 +131,52 @@ def test_cli_config_used_for_defaults(tmp_path, monkeypatch, capsys):
         "max_iterations": 2,
         "tools": ["calculator"],
         "stream": False,
+        "tool_timeout": 30.0,
     }
+
+
+def test_cli_config_tool_timeout_used(tmp_path, monkeypatch, capsys):
+    cfg = _write(tmp_path, "tool_timeout: 12.5\n")
+    seen = _patch_run(monkeypatch)
+    monkeypatch.setattr(sys, "argv", ["tool_calling_agent", "-q", "hi", "-c", cfg])
+    tca.main()
+    assert seen["tool_timeout"] == 12.5
+
+
+def test_cli_tool_timeout_flag_overrides_config(tmp_path, monkeypatch, capsys):
+    cfg = _write(tmp_path, "tool_timeout: 12\n")
+    seen = _patch_run(monkeypatch)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["tool_calling_agent", "-q", "hi", "-c", cfg, "--tool-timeout", "3"],
+    )
+    tca.main()
+    assert seen["tool_timeout"] == 3.0
+
+
+def test_cli_tool_timeout_zero_is_rejected(monkeypatch, capsys):
+    monkeypatch.setattr(
+        sys, "argv", ["tool_calling_agent", "-q", "hi", "--tool-timeout", "0"]
+    )
+    with pytest.raises(SystemExit):
+        tca.main()
+
+
+def test_bad_tool_timeout_rejected(tmp_path):
+    for bad in (
+        "tool_timeout: 0\n",
+        "tool_timeout: -5\n",
+        "tool_timeout: soon\n",
+        "tool_timeout: true\n",
+    ):
+        with pytest.raises(ValueError, match="tool_timeout"):
+            load_agent_config(_write(tmp_path, bad))
+
+
+def test_loads_tool_timeout(tmp_path):
+    cfg = load_agent_config(_write(tmp_path, "tool_timeout: 45\n"))
+    assert cfg["tool_timeout"] == 45.0
 
 
 def test_cli_flags_override_config(tmp_path, monkeypatch, capsys):
@@ -170,3 +220,4 @@ def test_example_config_file_is_valid():
     assert cfg["model"] == "gpt-4o-mini"
     assert cfg["max_rounds"] == 5
     assert len(cfg["tools"]) == 4
+    assert cfg["tool_timeout"] == 30.0

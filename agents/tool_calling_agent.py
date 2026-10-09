@@ -7,10 +7,15 @@ Usage:
     python -m agents.tool_calling_agent -q "2+2?" --max-rounds 3
     python -m agents.tool_calling_agent -q "What is 15% of 2340?" -c examples/agent_config.yaml
     python -m agents.tool_calling_agent -q "2+2?" --stream
+    python -m agents.tool_calling_agent -q "2+2?" --tool-timeout 10
 
-Agent defaults (model, max_rounds, tools) can live in a YAML config
-file (see examples/agent_config.yaml). Explicit CLI flags override the
-config file, which overrides the built-in defaults.
+Agent defaults (model, max_rounds, tools, tool_timeout) can live in a
+YAML config file (see examples/agent_config.yaml). Explicit CLI flags
+override the config file, which overrides the built-in defaults.
+
+Tool calls are bounded by the timeout (default 30s): a tool that hangs
+is abandoned and the model is told it timed out, so a slow search API
+or a stuck shell call cannot freeze the agent loop.
 
 The --stream flag prints the model's reply token by token as it
 arrives instead of waiting for the full response.
@@ -23,6 +28,7 @@ import os
 import random
 import re
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -34,7 +40,12 @@ from langchain_openai import ChatOpenAI
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from utils.usage import record_call, summarize_calls
-from utils.agent_config import DEFAULT_MAX_ROUNDS, DEFAULT_MODEL, load_agent_config
+from utils.agent_config import (
+    DEFAULT_MAX_ROUNDS,
+    DEFAULT_MODEL,
+    DEFAULT_TOOL_TIMEOUT,
+    load_agent_config,
+)
 
 load_dotenv()
 
@@ -60,6 +71,39 @@ def _call_with_retry(fn, *, max_attempts=3, base_delay=1.0):
             delay = base_delay * (2 ** attempt) + random.uniform(0, 0.5)
             time.sleep(delay)
     raise last_exc
+
+
+class ToolTimeoutError(TimeoutError):
+    """Raised when a tool call runs longer than its allotted timeout."""
+
+
+def invoke_with_timeout(fn, args, timeout):
+    """Call fn(args) and return its result, aborting the wait on timeout.
+
+    The call runs in a daemon thread so the wait can be abandoned:
+    if the call takes longer than ``timeout`` seconds, raise
+    ToolTimeoutError. The abandoned thread keeps running in the
+    background until the tool itself returns, but the agent loop
+    carries on without it. Tool errors are re-raised unchanged.
+    """
+    outcome = {}
+
+    def target():
+        try:
+            outcome["result"] = fn(args)
+        except BaseException as e:  # noqa: BLE001 - must surface tool errors as-is
+            outcome["error"] = e
+
+    worker = threading.Thread(target=target, daemon=True)
+    worker.start()
+    worker.join(timeout)
+    if worker.is_alive():
+        raise ToolTimeoutError(
+            f"tool call exceeded its {timeout:g}-second timeout"
+        )
+    if "error" in outcome:
+        raise outcome["error"]
+    return outcome["result"]
 
 _BIN_OPS = {
     ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul,
@@ -315,6 +359,7 @@ def run_agent_loop(
     usage_log: list = None,
     tools: list = None,
     stream: bool = False,
+    tool_timeout: float = DEFAULT_TOOL_TIMEOUT,
 ):
     """
     Run an agent loop that processes tool calls iteratively.
@@ -329,6 +374,9 @@ def run_agent_loop(
         stream: When True, print the model's reply token by token as it
             arrives (via the LLM's stream API) instead of waiting for
             the full response.
+        tool_timeout: Seconds to wait for a single tool call before
+            giving up. A timed-out tool is reported to the model so it
+            can retry differently instead of hanging the loop.
 
     Returns:
         The agent's final answer text.
@@ -381,7 +429,21 @@ def run_agent_loop(
             print(f"  🔧 Calling tool: {tool_name}({tool_args})")
 
             if tool_name in tool_map:
-                result = tool_map[tool_name].invoke(tool_args)
+                try:
+                    result = invoke_with_timeout(
+                        tool_map[tool_name].invoke, tool_args, tool_timeout
+                    )
+                except ToolTimeoutError:
+                    print(
+                        f"  ⏱️  Tool '{tool_name}' timed out after "
+                        f"{tool_timeout:g}s"
+                    )
+                    result = (
+                        f"Tool '{tool_name}' timed out after "
+                        f"{tool_timeout:g}s. Treat it as unavailable: "
+                        "answer from what you know, ask the user for the "
+                        "missing input, or try a different tool."
+                    )
             else:
                 result = f"Unknown tool: {tool_name}"
 
@@ -418,6 +480,15 @@ def main():
         action="store_true",
         help="Print the model's reply token by token as it arrives",
     )
+    parser.add_argument(
+        "--tool-timeout",
+        type=float,
+        default=None,
+        help=(
+            "Seconds to wait for a single tool call before giving up "
+            "(overrides config file)"
+        ),
+    )
     args = parser.parse_args()
 
     # Precedence: CLI flag > config file > built-in default.
@@ -433,14 +504,17 @@ def main():
     model = pick(args.model, "model", DEFAULT_MODEL)
     max_rounds = pick(args.max_rounds, "max_rounds", DEFAULT_MAX_ROUNDS)
     tools = resolve_tools(cfg["tools"]) if cfg is not None else None
+    tool_timeout = pick(args.tool_timeout, "tool_timeout", DEFAULT_TOOL_TIMEOUT)
 
     if max_rounds < 1:
         parser.error("--max-rounds must be at least 1")
+    if tool_timeout <= 0:
+        parser.error("--tool-timeout must be a positive number of seconds")
 
     print(f"🤔 Question: {args.query}\n")
     answer = run_agent_loop(
         args.query, model=model, max_iterations=max_rounds, tools=tools,
-        stream=args.stream,
+        stream=args.stream, tool_timeout=tool_timeout,
     )
     print(f"\n🤖 Answer: {answer}")
 

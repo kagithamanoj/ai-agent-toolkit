@@ -4,7 +4,7 @@
 #   python -m agents.tool_calling_agent -q "What is 15% of 2340?" -c my_config.yaml
 #
 # Any key may be omitted. Missing keys fall back to built-in defaults.
-# Explicit CLI flags (--model, --max-rounds) override these values.
+# Explicit CLI flags (--model, --max-rounds, --tool-timeout) override these values.
 
 # LLM model name (default: gpt-4o-mini)
 model: gpt-4o-mini
@@ -19,3 +19,7 @@ tools:
   - web_search
   - read_file
   - current_datetime
+
+# Per-tool call timeout in seconds. A tool that takes longer is
+# abandoned and the agent is told it timed out (default: 30).
+tool_timeout: 30

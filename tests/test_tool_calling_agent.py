@@ -1,4 +1,5 @@
 import sys
+import time
 import types
 
 import pytest
@@ -451,3 +452,88 @@ def test_main_passes_stream_flag_to_loop(monkeypatch):
 def test_main_defaults_stream_to_false(monkeypatch):
     captured = _run_main(monkeypatch, ["--query", "hi"])
     assert captured["kwargs"]["stream"] is False
+
+
+# ── tool call timeouts ───────────────────────────────────────────────────────
+
+
+def test_invoke_with_timeout_returns_fast_result():
+    assert tca.invoke_with_timeout(lambda a: a * 2, 21, timeout=5) == 42
+
+
+def test_invoke_with_timeout_raises_on_hang():
+    def hang(_args):
+        time.sleep(60)
+
+    start = time.monotonic()
+    with pytest.raises(tca.ToolTimeoutError, match="exceeded its"):
+        tca.invoke_with_timeout(hang, None, timeout=0.2)
+    # the wait is abandoned; the test must not sit through the hang
+    assert time.monotonic() - start < 10
+
+
+def test_tool_timeout_error_is_a_timeout_error():
+    assert issubclass(tca.ToolTimeoutError, TimeoutError)
+
+
+def test_invoke_with_timeout_reraises_tool_errors():
+    def boom(_args):
+        raise ValueError("bad tool")
+
+    with pytest.raises(ValueError, match="bad tool"):
+        tca.invoke_with_timeout(boom, None, timeout=5)
+
+
+def test_loop_reports_timed_out_tool_to_model(monkeypatch, capsys):
+    class SlowTool:
+        name = "slow_tool"
+
+        def invoke(self, args):
+            time.sleep(60)  # daemon thread; dies with the test process
+            return "never"
+
+    call = {"name": "slow_tool", "args": {}, "id": "c1"}
+    llm = _patch_llm(
+        monkeypatch,
+        [AIMessage(content="", tool_calls=[call]), AIMessage(content="gave up")],
+        tool_list=[SlowTool()],
+    )
+    start = time.monotonic()
+    answer = tca.run_agent_loop("x", tool_timeout=0.1)
+    assert time.monotonic() - start < 10
+
+    assert answer == "gave up"
+    tool_msg = llm.seen[1][-1]
+    assert tool_msg.tool_call_id == "c1"
+    assert "timed out after 0.1s" in tool_msg.content
+    out = capsys.readouterr().out
+    assert "timed out after 0.1s" in out
+
+
+def test_loop_tool_without_timeout_behaves_as_before(monkeypatch):
+    call = {"name": "calculator", "args": {"expression": "2+2"}, "id": "c1"}
+    llm = _patch_llm(
+        monkeypatch,
+        [AIMessage(content="", tool_calls=[call]), AIMessage(content="It is 4")],
+    )
+    assert tca.run_agent_loop("2+2?", tool_timeout=30) == "It is 4"
+    assert llm.seen[1][-1].content == "Result: 4"
+
+
+def test_main_passes_tool_timeout_to_loop(monkeypatch):
+    captured = _run_main(monkeypatch, ["--query", "hi", "--tool-timeout", "12"])
+    assert captured["kwargs"]["tool_timeout"] == 12.0
+
+
+def test_main_defaults_tool_timeout_to_thirty(monkeypatch):
+    captured = _run_main(monkeypatch, ["--query", "hi"])
+    assert captured["kwargs"]["tool_timeout"] == 30.0
+
+
+def test_main_rejects_non_positive_tool_timeout(monkeypatch):
+    monkeypatch.setattr(
+        sys, "argv", ["tool_calling_agent.py", "-q", "hi", "--tool-timeout", "0"]
+    )
+    with pytest.raises(SystemExit) as exc:
+        tca.main()
+    assert exc.value.code != 0

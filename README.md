@@ -164,10 +164,15 @@ not have to repeat long CLI flags:
 python -m agents.tool_calling_agent -q "What is 15% of 2340?" -c examples/agent_config.yaml
 ```
 
-The file can set `model`, `max_rounds`, and `tools` (a subset of the built-in
-tools). Missing keys fall back to the built-in defaults, and explicit CLI
-flags (`--model`, `--max-rounds`) override the config file. Copy
-`examples/agent_config.yaml` to get started.
+The file can set `model`, `max_rounds`, `tools` (a subset of the built-in
+tools), and `tool_timeout` (per-tool call timeout in seconds, default 30).
+Missing keys fall back to the built-in defaults, and explicit CLI
+flags (`--model`, `--max-rounds`, `--tool-timeout`) override the config file.
+Copy `examples/agent_config.yaml` to get started.
+
+Each tool call is bounded by the timeout: a tool that hangs past it is
+abandoned and the model is told it timed out, so it can answer another way
+instead of freezing the loop.
 
 ## Testing
 
