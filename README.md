@@ -118,6 +118,9 @@ python -m agents.tool_calling_agent -q "What is 15% of 2340?"
 # Same demo, printing the reply token by token as it arrives
 python -m agents.tool_calling_agent -q "What is 15% of 2340?" --stream
 
+# Same demo, with a per-round trace showing each step's elapsed time
+python -m agents.tool_calling_agent -q "What is 15% of 2340?" --verbose
+
 # Run Multi-Agent demo
 python -m agents.multi_agent -t "Advancements in LLM Orchestration"
 ```
@@ -165,9 +168,11 @@ python -m agents.tool_calling_agent -q "What is 15% of 2340?" -c examples/agent_
 ```
 
 The file can set `model`, `max_rounds`, `tools` (a subset of the built-in
-tools), and `tool_timeout` (per-tool call timeout in seconds, default 30).
-Missing keys fall back to the built-in defaults, and explicit CLI
-flags (`--model`, `--max-rounds`, `--tool-timeout`) override the config file.
+tools), `tool_timeout` (per-tool call timeout in seconds, default 30),
+and `verbose` (print a per-round trace with each reasoning step's
+elapsed time, default false). Missing keys fall back to the built-in
+defaults, and explicit CLI
+flags (`--model`, `--max-rounds`, `--tool-timeout`, `--verbose`) override the config file.
 Copy `examples/agent_config.yaml` to get started.
 
 Each tool call is bounded by the timeout: a tool that hangs past it is

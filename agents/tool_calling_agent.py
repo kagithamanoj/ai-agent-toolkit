@@ -8,8 +8,9 @@ Usage:
     python -m agents.tool_calling_agent -q "What is 15% of 2340?" -c examples/agent_config.yaml
     python -m agents.tool_calling_agent -q "2+2?" --stream
     python -m agents.tool_calling_agent -q "2+2?" --tool-timeout 10
+    python -m agents.tool_calling_agent -q "2+2?" --verbose
 
-Agent defaults (model, max_rounds, tools, tool_timeout) can live in a
+Agent defaults (model, max_rounds, tools, tool_timeout, verbose) can live in a
 YAML config file (see examples/agent_config.yaml). Explicit CLI flags
 override the config file, which overrides the built-in defaults.
 
@@ -19,6 +20,10 @@ or a stuck shell call cannot freeze the agent loop.
 
 The --stream flag prints the model's reply token by token as it
 arrives instead of waiting for the full response.
+
+The --verbose flag prints a per-round trace header plus the elapsed
+time of each LLM reasoning step and each tool call, ending with a
+timing summary. Useful for spotting which step dominates a slow run.
 """
 
 import ast
@@ -44,6 +49,7 @@ from utils.agent_config import (
     DEFAULT_MAX_ROUNDS,
     DEFAULT_MODEL,
     DEFAULT_TOOL_TIMEOUT,
+    DEFAULT_VERBOSE,
     load_agent_config,
 )
 
@@ -360,6 +366,7 @@ def run_agent_loop(
     tools: list = None,
     stream: bool = False,
     tool_timeout: float = DEFAULT_TOOL_TIMEOUT,
+    verbose: bool = False,
 ):
     """
     Run an agent loop that processes tool calls iteratively.
@@ -377,6 +384,9 @@ def run_agent_loop(
         tool_timeout: Seconds to wait for a single tool call before
             giving up. A timed-out tool is reported to the model so it
             can retry differently instead of hanging the loop.
+        verbose: When True, print a per-round trace header plus the
+            elapsed time of each LLM reasoning step and each tool call,
+            ending with a timing summary.
 
     Returns:
         The agent's final answer text.
@@ -392,6 +402,7 @@ def run_agent_loop(
     ]
 
     calls = []
+    trace = []  # per-round {"round": n, "llm_s": float, "tool_s": float} for --verbose
 
     def finish(answer):
         summary = summarize_calls(calls)
@@ -399,15 +410,29 @@ def run_agent_loop(
             f"  📊 Usage: {summary['calls']} LLM call(s), "
             f"{summary['total_tokens']} tokens, ~${summary['total_cost_usd']:.6f}"
         )
+        if verbose and trace:
+            total_llm = sum(t["llm_s"] for t in trace)
+            total_tool = sum(t["tool_s"] for t in trace)
+            print(
+                f"  ⏱️  Timing: {total_llm:.2f}s LLM reasoning, "
+                f"{total_tool:.2f}s tools across {len(trace)} round(s)"
+            )
         if usage_log is not None:
             usage_log.extend(calls)
         return answer
 
     for i in range(max_iterations):
+        if verbose:
+            print(f"\n🔍 Round {i + 1}/{max_iterations}")
+        llm_start = time.perf_counter()
         if stream:
             response = _stream_response(llm_with_tools, messages)
         else:
             response = llm_with_tools.invoke(messages)
+        llm_s = time.perf_counter() - llm_start
+        if verbose:
+            print(f"  ⏱️  LLM reasoning step took {llm_s:.2f}s")
+        trace.append({"round": i + 1, "llm_s": llm_s, "tool_s": 0.0})
         messages.append(response)
 
         # Log per-call token usage and estimated cost
@@ -428,6 +453,7 @@ def run_agent_loop(
             tool_args = tc["args"]
             print(f"  🔧 Calling tool: {tool_name}({tool_args})")
 
+            tool_start = time.perf_counter()
             if tool_name in tool_map:
                 try:
                     result = invoke_with_timeout(
@@ -446,6 +472,10 @@ def run_agent_loop(
                     )
             else:
                 result = f"Unknown tool: {tool_name}"
+            tool_s = time.perf_counter() - tool_start
+            trace[-1]["tool_s"] += tool_s
+            if verbose:
+                print(f"  ⏱️  Tool '{tool_name}' took {tool_s:.2f}s")
 
             messages.append(ToolMessage(content=str(result), tool_call_id=tc["id"]))
 
@@ -464,7 +494,7 @@ def main():
         "-c",
         type=str,
         default=None,
-        help="YAML config file with agent defaults (model, max_rounds, tools)",
+        help="YAML config file with agent defaults (model, max_rounds, tools, tool_timeout, verbose)",
     )
     parser.add_argument(
         "--model", "-m", type=str, default=None, help="LLM model (overrides config file)"
@@ -489,6 +519,15 @@ def main():
             "(overrides config file)"
         ),
     )
+    parser.add_argument(
+        "--verbose",
+        "-v",
+        action="store_true",
+        help=(
+            "Print a per-round trace with the elapsed time of each "
+            "reasoning step and tool call (overrides config file)"
+        ),
+    )
     args = parser.parse_args()
 
     # Precedence: CLI flag > config file > built-in default.
@@ -505,6 +544,11 @@ def main():
     max_rounds = pick(args.max_rounds, "max_rounds", DEFAULT_MAX_ROUNDS)
     tools = resolve_tools(cfg["tools"]) if cfg is not None else None
     tool_timeout = pick(args.tool_timeout, "tool_timeout", DEFAULT_TOOL_TIMEOUT)
+    # store_true cannot distinguish "flag absent" from "flag false", so the
+    # flag only ever turns verbose on; the config file covers the rest.
+    verbose = True if args.verbose else (
+        cfg["verbose"] if cfg is not None else DEFAULT_VERBOSE
+    )
 
     if max_rounds < 1:
         parser.error("--max-rounds must be at least 1")
@@ -514,7 +558,7 @@ def main():
     print(f"🤔 Question: {args.query}\n")
     answer = run_agent_loop(
         args.query, model=model, max_iterations=max_rounds, tools=tools,
-        stream=args.stream, tool_timeout=tool_timeout,
+        stream=args.stream, tool_timeout=tool_timeout, verbose=verbose,
     )
     print(f"\n🤖 Answer: {answer}")
 

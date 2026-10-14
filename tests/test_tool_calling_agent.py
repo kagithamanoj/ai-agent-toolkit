@@ -537,3 +537,66 @@ def test_main_rejects_non_positive_tool_timeout(monkeypatch):
     with pytest.raises(SystemExit) as exc:
         tca.main()
     assert exc.value.code != 0
+
+
+# ── verbose per-step tracing ───────────────────────────────────────────────────
+
+
+def test_verbose_prints_round_header_and_step_timings(monkeypatch, capsys):
+    call = {"name": "calculator", "args": {"expression": "2+2"}, "id": "c1"}
+    _patch_llm(
+        monkeypatch,
+        [AIMessage(content="", tool_calls=[call]), AIMessage(content="It is 4")],
+    )
+    answer = tca.run_agent_loop("2+2?", verbose=True)
+    assert answer == "It is 4"
+
+    out = capsys.readouterr().out
+    assert "🔍 Round 1/5" in out
+    assert "🔍 Round 2/5" in out
+    assert "LLM reasoning step took" in out
+    assert "Tool 'calculator' took" in out
+    assert "Timing:" in out
+    assert "2 round(s)" in out
+
+
+def test_verbose_reports_unknown_tool_timing_too(monkeypatch, capsys):
+    call = {"name": "rm_rf", "args": {}, "id": "c1"}
+    llm = _patch_llm(
+        monkeypatch,
+        [AIMessage(content="", tool_calls=[call]), AIMessage(content="ok")],
+    )
+    tca.run_agent_loop("x", verbose=True)
+    # the unknown-tool result is fed back to the model, not printed
+    assert llm.seen[1][-1].content == "Unknown tool: rm_rf"
+    out = capsys.readouterr().out
+    assert "Tool 'rm_rf' took" in out
+    assert "Timing:" in out
+
+
+def test_verbose_off_by_default_prints_no_trace_lines(monkeypatch, capsys):
+    call = {"name": "calculator", "args": {"expression": "2+2"}, "id": "c1"}
+    _patch_llm(
+        monkeypatch,
+        [AIMessage(content="", tool_calls=[call]), AIMessage(content="It is 4")],
+    )
+    assert tca.run_agent_loop("2+2?") == "It is 4"
+    out = capsys.readouterr().out
+    assert "🔍" not in out
+    assert "took" not in out
+    assert "Timing:" not in out
+
+
+def test_main_passes_verbose_flag_to_loop(monkeypatch):
+    captured = _run_main(monkeypatch, ["--query", "hi", "--verbose"])
+    assert captured["kwargs"]["verbose"] is True
+
+
+def test_main_short_verbose_flag_enables_tracing(monkeypatch):
+    captured = _run_main(monkeypatch, ["--query", "hi", "-v"])
+    assert captured["kwargs"]["verbose"] is True
+
+
+def test_main_defaults_verbose_to_false(monkeypatch):
+    captured = _run_main(monkeypatch, ["--query", "hi"])
+    assert captured["kwargs"]["verbose"] is False

@@ -21,6 +21,7 @@ def test_defaults_when_file_is_empty(tmp_path):
         "max_rounds": 5,
         "tools": ["calculator", "web_search", "read_file", "current_datetime"],
         "tool_timeout": 30.0,
+        "verbose": False,
     }
 
 
@@ -104,7 +105,7 @@ def _patch_run(monkeypatch):
 
     def fake_run(
         query, model=None, max_iterations=None, tools=None, stream=False,
-        tool_timeout=None,
+        tool_timeout=None, verbose=False,
     ):
         seen["query"] = query
         seen["model"] = model
@@ -112,6 +113,7 @@ def _patch_run(monkeypatch):
         seen["tools"] = None if tools is None else [t.name for t in tools]
         seen["stream"] = stream
         seen["tool_timeout"] = tool_timeout
+        seen["verbose"] = verbose
         return "done"
 
     monkeypatch.setattr(tca, "run_agent_loop", fake_run)
@@ -132,6 +134,7 @@ def test_cli_config_used_for_defaults(tmp_path, monkeypatch, capsys):
         "tools": ["calculator"],
         "stream": False,
         "tool_timeout": 30.0,
+        "verbose": False,
     }
 
 
@@ -179,6 +182,44 @@ def test_loads_tool_timeout(tmp_path):
     assert cfg["tool_timeout"] == 45.0
 
 
+def test_loads_verbose(tmp_path):
+    cfg = load_agent_config(_write(tmp_path, "verbose: true\n"))
+    assert cfg["verbose"] is True
+
+
+def test_bad_verbose_rejected(tmp_path):
+    for bad in ("verbose: 1\n", "verbose: yes-please\n", "verbose: 'true'\n"):
+        with pytest.raises(ValueError, match="verbose"):
+            load_agent_config(_write(tmp_path, bad))
+
+
+def test_cli_config_verbose_used(tmp_path, monkeypatch, capsys):
+    cfg = _write(tmp_path, "verbose: true\n")
+    seen = _patch_run(monkeypatch)
+    monkeypatch.setattr(sys, "argv", ["tool_calling_agent", "-q", "hi", "-c", cfg])
+    tca.main()
+    assert seen["verbose"] is True
+
+
+def test_cli_verbose_flag_enables_tracing(monkeypatch, capsys):
+    seen = _patch_run(monkeypatch)
+    monkeypatch.setattr(
+        sys, "argv", ["tool_calling_agent", "-q", "hi", "--verbose"]
+    )
+    tca.main()
+    assert seen["verbose"] is True
+
+
+def test_cli_verbose_flag_overrides_false_config(tmp_path, monkeypatch, capsys):
+    cfg = _write(tmp_path, "verbose: false\n")
+    seen = _patch_run(monkeypatch)
+    monkeypatch.setattr(
+        sys, "argv", ["tool_calling_agent", "-q", "hi", "-c", cfg, "--verbose"]
+    )
+    tca.main()
+    assert seen["verbose"] is True
+
+
 def test_cli_flags_override_config(tmp_path, monkeypatch, capsys):
     cfg = _write(tmp_path, "model: gpt-4o\nmax_rounds: 2\n")
     seen = _patch_run(monkeypatch)
@@ -221,3 +262,4 @@ def test_example_config_file_is_valid():
     assert cfg["max_rounds"] == 5
     assert len(cfg["tools"]) == 4
     assert cfg["tool_timeout"] == 30.0
+    assert cfg["verbose"] is False

@@ -2,7 +2,7 @@
 Agent YAML config file support.
 
 A config file sets defaults for agent runs without repeating long CLI
-flags. The file is plain YAML with up to four keys:
+flags. The file is plain YAML with up to five keys:
 
     model: gpt-4o-mini        # LLM model name
     max_rounds: 5             # max tool-calling rounds
@@ -12,6 +12,7 @@ flags. The file is plain YAML with up to four keys:
       - read_file
       - current_datetime
     tool_timeout: 30          # per-tool call timeout in seconds
+    verbose: false            # per-round timing trace
 
 Any key may be omitted; missing keys fall back to the built-in
 defaults. CLI flags still take precedence over values from the file.
@@ -25,13 +26,14 @@ except ImportError:  # pragma: no cover - guarded at call time
     yaml = None
 
 # Built-in defaults: model, rounds, the full set of built-in tools,
-# and the per-tool call timeout in seconds.
+# the per-tool call timeout in seconds, and the per-round timing trace.
 DEFAULT_MODEL = "gpt-4o-mini"
 DEFAULT_MAX_ROUNDS = 5
 DEFAULT_TOOLS = ["calculator", "web_search", "read_file", "current_datetime"]
 DEFAULT_TOOL_TIMEOUT = 30.0
+DEFAULT_VERBOSE = False
 
-_KNOWN_KEYS = {"model", "max_rounds", "tools", "tool_timeout"}
+_KNOWN_KEYS = {"model", "max_rounds", "tools", "tool_timeout", "verbose"}
 
 
 def _require_yaml():
@@ -50,8 +52,9 @@ def load_agent_config(path):
 
     Returns:
         A dict with keys ``model`` (str), ``max_rounds`` (int),
-        ``tools`` (list of tool-name strings) and ``tool_timeout``
-        (float, seconds), all resolved against the built-in defaults.
+        ``tools`` (list of tool-name strings), ``tool_timeout``
+        (float, seconds) and ``verbose`` (bool), all resolved against
+        the built-in defaults.
 
     Raises:
         FileNotFoundError: If the file does not exist.
@@ -111,9 +114,14 @@ def load_agent_config(path):
     if tool_timeout <= 0:
         raise ValueError(f"Config file {path}: 'tool_timeout' must be positive")
 
+    verbose = data.get("verbose", DEFAULT_VERBOSE)
+    if not isinstance(verbose, bool):
+        raise ValueError(f"Config file {path}: 'verbose' must be a boolean")
+
     return {
         "model": model,
         "max_rounds": max_rounds,
         "tools": list(tools),
         "tool_timeout": float(tool_timeout),
+        "verbose": verbose,
     }
