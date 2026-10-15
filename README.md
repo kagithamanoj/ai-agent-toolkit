@@ -179,6 +179,24 @@ Each tool call is bounded by the timeout: a tool that hangs past it is
 abandoned and the model is told it timed out, so it can answer another way
 instead of freezing the loop.
 
+### Calculator tool
+
+The tool-calling agent's `calculator` tool evaluates math expressions with
+a safe AST interpreter (not `eval`). It supports:
+
+- Binary operators: `+`, `-`, `*`, `/`, `//`, `%`, `**`
+  (add, subtract, multiply, true division, floor division, modulo, power)
+- Unary operators: `+`, `-`
+- Functions: everything in the `math` module (`sqrt`, `sin`, `log`,
+  `factorial`, ...) plus `abs`, `round`, `min`, `max`. Positional arguments
+  only, no keyword arguments.
+- Constants: `pi`, `e`, `tau`, `inf`
+- Number literals: integers and floats only
+
+Anything else is refused with an `Error evaluating ...` string instead of
+raising: strings, lists, variables, attribute access, imports, and power
+expressions with an exponent larger than 1000 in magnitude.
+
 ## Testing
 
 The test suite uses fake LLMs and mocked network calls, so it needs no API keys and no internet:

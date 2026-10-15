@@ -1,5 +1,6 @@
 import sys
 import time
+import math
 import types
 
 import pytest
@@ -174,6 +175,46 @@ def test_calculator_rejects_sandbox_escapes():
 def test_calculator_supports_constants_and_unary():
     assert tca.calculator.invoke({"expression": "-pi"}) == f"Result: {-3.141592653589793}"
     assert tca.calculator.invoke({"expression": "2 ** 10"}) == "Result: 1024"
+
+
+@pytest.mark.parametrize(
+    "expression, expected",
+    [
+        ("2 + 3", "Result: 5"),
+        ("10 - 4", "Result: 6"),
+        ("6 * 7", "Result: 42"),
+        ("7 / 2", "Result: 3.5"),
+        ("7 // 2", "Result: 3"),
+        ("7 % 3", "Result: 1"),
+        ("2 ** 8", "Result: 256"),
+        ("-5", "Result: -5"),
+        ("+5", "Result: 5"),
+        ("2 * (3 + 4)", "Result: 14"),
+        ("sqrt(16)", "Result: 4.0"),
+        ("floor(2.9)", "Result: 2"),
+        ("log(e)", "Result: 1.0"),
+        ("sin(pi / 2)", "Result: 1.0"),
+        ("abs(-3)", "Result: 3"),
+        ("round(2.5)", "Result: 2"),
+        ("min(2, 8)", "Result: 2"),
+        ("max(2, 8)", "Result: 8"),
+        ("pi", f"Result: {math.pi}"),
+        ("e", f"Result: {math.e}"),
+        ("tau", f"Result: {math.tau}"),
+        ("inf", "Result: inf"),
+    ],
+)
+def test_calculator_documented_operator_coverage(expression, expected):
+    """Every operator, function and constant the README documents must evaluate."""
+    assert tca.calculator.invoke({"expression": expression}) == expected
+
+
+def test_calculator_documented_refusals():
+    """Limits the README promises: refusals return an error string, never raise."""
+    for expression in ["2 ** 1001", "'spam' * 3", "sqrt(x=4)", "foo + 1"]:
+        out = tca.calculator.invoke({"expression": expression})
+        assert out.startswith("Error evaluating"), expression
+    assert "exponent too large" in tca.calculator.invoke({"expression": "2 ** 1001"})
 
 
 # ── web_search retry tests ─────────────────────────────────────────────────────
