@@ -206,6 +206,10 @@ pip install pytest
 python -m pytest tests/ -v
 ```
 
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for the full release history.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
